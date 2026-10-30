@@ -19,12 +19,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // ── 分桶规则（顺序即优先级）────────────────────────────────────────────────
+// 整段脚本里出现真实错误证据时，「最后一句是 Get-*」不再能证明它只是「查了没有」
+const HARD_ERROR = /ParserError|is not recognized|Cannot find|ParameterBindingException|Traceback \(most recent call last\)|\bat .+:\d+:\d+|unexpected token|EACCES|EPERM|ENOENT|EADDRINUSE/i;
+
+// 5xx 只有在网络工具里才算环境问题：应用自己返回 500 是代码问题
+const NET_TOOLS = /(curl|wget|web_fetch|http|browser|fetch|requests)/i;
+
 const RULES = [
   {
     id: 'killed-minus1',
     bucket: 'killed',
     why: '退出码 4294967295 = -1，进程被终止（超时 / 外部 kill），不是脚本判失败',
-    test: (r) => r.tool === 'pwsh' && r.exit === 4294967295,
+    test: (r) => r.tool === 'pwsh' && r.exit === 4294967295 && !HARD_ERROR.test(r.err),
   },
   {
     id: 'tool-timeout',
@@ -36,7 +42,8 @@ const RULES = [
     id: 'killed-text',
     bucket: 'killed',
     why: '正文出现终止标记（SIGKILL / SIGTERM / killed / timeout after）',
-    test: (r) => /SIGKILL|SIGTERM|\bKilled\b|was terminated|timeout after \d/i.test(r.err),
+    // 只认「进程被终止」的字面标记：脚本自己打印的 "timeout after 30s" 是业务超时，属于真失败
+    test: (r) => /SIGKILL|SIGTERM|\bKilled\b|was terminated|Command timed out|tool call timed out/i.test(r.err),
   },
   {
     id: 'env-network',
@@ -48,7 +55,9 @@ const RULES = [
     id: 'env-upstream-5xx',
     bucket: 'env',
     why: '出网失败（fetch failed / other side closed / 上游 HTTP 5xx）——换命令写法过不去；先重试一次再怀疑配置。只认 5xx：4xx 是「这个请求本身不对」，换个参数就能过，归到环境等于免检',
-    test: (r) => /TypeError: fetch failed|other side closed|HTTP 5\d\d/i.test(r.err),
+    // 5xx 只在网络工具里认：应用层自己返回 500 是代码问题，归到环境等于免检
+    test: (r) => /TypeError: fetch failed|other side closed/i.test(r.err)
+      || (/HTTP 5\d\d/i.test(r.err) && NET_TOOLS.test(String(r.tool)) && !HARD_ERROR.test(r.err)),
   },
   {
     id: 'env-ambiguous-provider',
@@ -60,7 +69,9 @@ const RULES = [
     id: 'probe-dry',
     bucket: 'probe',
     why: '显式 dry-run / 负例探针：命令本身就是「验它会不会拒绝」，非零是预期结果',
-    test: (r) => /-DryRun\b|--dry-run\b|--dry\b/.test(r.cmd),
+    // 参数里有 dry-run 只说明「我打算探它」，不能证明这次非零是预期结果：
+    // 报的是找不到文件 / 权限 / 栈回溯，那是真失败，必须留在 real
+    test: (r) => /-DryRun\b|--dry-run\b|--dry\b/.test(r.cmd) && !HARD_ERROR.test(r.err),
   },
   {
     id: 'gate-report',
@@ -121,6 +132,8 @@ const RULES = [
       if (r.tool !== 'pwsh' || r.exit !== 1 || /\[stderr\]/.test(r.err)) return false;
       const src = String(r.cmdText || r.cmd);
       if (/(\*|2)>/.test(src)) return false;
+      // 前面已经出过真实错误时，最后一句是 rg 也不代表「只是没匹配到」
+      if (HARD_ERROR.test(String(r.out) + '\n' + String(r.err))) return false;
       const lines = src.split('\n').map((s) => s.trim()).filter(Boolean);
       const last = lines[lines.length - 1] || '';
       return /(^|[\s;&|($])(rg|rg\.exe|grep|findstr)(\s|\.exe|$)/.test(last);
@@ -134,6 +147,7 @@ const RULES = [
       if (r.tool !== 'pwsh' || r.exit !== 1 || /\[stderr\]/.test(r.err)) return false;
       const src = String(r.cmdText || r.cmd);
       if (/(\*|2)>/.test(src)) return false;
+      if (HARD_ERROR.test(String(r.out) + '\n' + String(r.err))) return false;
       const lines = src.split('\n').map((s) => s.trim()).filter(Boolean);
       return /^Get-/.test(lines[lines.length - 1] || '');
     },
@@ -337,6 +351,11 @@ export function selftest() {
     ['idiom', { tool: 'pwsh', exit: 1, cmd: 'Get-Process notepad', out: '', err: '' }],
     ['gate', { tool: 'pwsh', exit: 1, cmd: 'node tools/ed.mjs --file a', out: '', err: '{"ok":false,"msg":"锚点找不到"}' }],
     ['real', { tool: 'pwsh', exit: 1, cmd: 'node a.mjs', out: '', err: 'SyntaxError: Unexpected token }' }],
+    // 下面四条是评审提的：宽规则会把真失败吞掉，每一条都必须留在 real
+    ['real', { tool: 'pwsh', exit: 1, cmd: 'node run.mjs --dry-run', out: '', err: "Cannot find module 'foo'" }],
+    ['real', { tool: 'pwsh', exit: 1, cmd: 'node app.mjs', out: '', err: 'upstream returned HTTP 500 for /api' }],
+    ['real', { tool: 'pwsh', exit: 1, cmd: 'node backfill.mjs', out: '', err: 'timeout after 30s waiting for db' }],
+    ['real', { tool: 'pwsh', exit: 1, cmd: 'Get-Item C:\\a; Invoke-RestMethod x; Get-ChildItem C:\\b', out: '', err: "Cannot find path 'C:\\b'" }],
   ];
   let bad = 0;
   for (const [want, row] of cases) {
@@ -384,6 +403,7 @@ function main() {
 
   const rows = [];
   let badLines = 0;
+  let futureLines = 0;
   fs.readFileSync(file, 'utf8').split('\n').forEach((line) => {
     const s = line.trim();
     if (!s || s.startsWith('#')) return;
@@ -391,15 +411,25 @@ function main() {
     try { r = JSON.parse(s); } catch { badLines++; return; }
     const at = Date.parse(r.at || '');
     if (!Number.isFinite(at)) { badLines++; return; }
-    if (at < sinceMs || at > untilMs) return;
+    // 时间在「现在」之后 = 数据坏了（时区写错 / 机器时钟错）：安安静静丢掉会让分母偏小，
+    // 而偏小的分母看起来像「失败变少了」
+    if (at > untilMs) { futureLines++; return; }
+    if (at < sinceMs) return;
     const c = classify(r);
-    rows.push({ ...r, at, bucket: c.bucket, rule: c.rule, cause: c.cause });
+    // causeAny：不管分到哪个桶都算一遍原始证据，给下游（mech）用。
+    // 有的失败会被一条宽规则降桶；若不留下原始证据，机制就会把「分类器漏判」当成「这类失败没了」
+    rows.push({ ...r, at, bucket: c.bucket, rule: c.rule, cause: c.cause, causeAny: c.cause || pickCause(r) });
   });
+
+  // 严格模式在出任何读数之前就拒绝：解析不了的行、时间在将来的行都会让分子分母同时失真
+  if ((badLines || futureLines) && flag('strict')) {
+    console.error(`classify: ${badLines} 行解析不了 / ${futureLines} 行时间在将来，读数不完整`);
+    process.exit(3);
+  }
 
   if (flag('dump')) {
     // 给下游脚本用：一行一行的 JSONL，诊断信息走 stderr，别混进 stdout
     for (const r of rows) console.log(JSON.stringify(r));
-    if (badLines && flag('strict')) { console.error(`classify: ${badLines} 行解析不了，读数不完整`); process.exit(3); }
     return;
   }
 
@@ -407,12 +437,13 @@ function main() {
   for (const r of rows) counts[r.bucket]++;
   const total = rows.length;
   const sum = BUCKETS.reduce((a, b) => a + counts[b], 0);
-  const degraded = badLines > 0 || sum !== total;
+  const degraded = badLines > 0 || futureLines > 0 || sum !== total;
 
-  const out = { windowDays: winDays || null, asOf: new Date(untilMs).toISOString(), total, counts, degraded, badLines };
+  const out = { windowDays: winDays || null, asOf: new Date(untilMs).toISOString(), total, counts, degraded, badLines, futureLines };
   if (flag('json')) { console.log(JSON.stringify(out)); process.exit(0); }
 
-  console.log(`窗口 ${winDays ? winDays + ' 天' : '全部'} / 失败调用 ${total} 条${degraded ? `  (读数降级: ${badLines} 行解析不了)` : ''}`);
+  const degradedWhy = [badLines ? `${badLines} 行解析不了` : '', futureLines ? `${futureLines} 行时间在将来` : ''].filter(Boolean).join('，');
+  console.log(`窗口 ${winDays ? winDays + ' 天' : '全部'} / 失败调用 ${total} 条${degraded ? `  (读数降级: ${degradedWhy})` : ''}`);
   for (const b of BUCKETS) {
     const pct = total ? (counts[b] / total * 100).toFixed(1) : '0.0';
     console.log(`  ${wpad(LABEL[b], 40)} ${String(counts[b]).padStart(4)}  ${pct.padStart(5)}%`);

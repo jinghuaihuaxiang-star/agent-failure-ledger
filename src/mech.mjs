@@ -86,7 +86,9 @@ if (flag('selftest')) {
 // ── 1. 读账本 + 机械校验 ─────────────────────────────────────────────────
 // 账本坏了不能「跳过坏行继续算」：漏掉一项会让生效数偏低，而错在账本上却表现为「机制没生效」，
 // 下一次就会去修本来没坏的机制。
-const REG = path.resolve(String(opt('registry') || 'mechanisms.jsonl'));
+const regOpt = opt('registry');
+if (regOpt === true) { console.error('mech: --registry 需要一个文件路径（只写 --registry 会被当成文件名 "true"）'); process.exit(2); }
+const REG = path.resolve(String(regOpt || 'mechanisms.jsonl'));
 if (!fs.existsSync(REG)) { console.error(`mech: 账本不存在 ${REG}`); process.exit(1); }
 
 const bad = [];
@@ -143,8 +145,12 @@ let rows = [];
     const s = line.trim();
     if (!s) continue;
     if (!s.startsWith('{')) { console.error(`mech: classify 输出里有非 JSON 行，读数不可信：${s.slice(0, 100)}`); process.exit(2); }
-    const r = JSON.parse(s);
-    if (r.bucket === 'real' && r.at >= Date.parse(since)) rows.push(r);
+    let r;
+    try { r = JSON.parse(s); } catch { console.error(`mech: classify 输出了不合法的 JSON 行：${s.slice(0, 100)}`); process.exit(2); }
+    // classify 与 mech 必须同版本：缺 causeAny 时匹配会全部落空，读数会整体偏向 unproven／holding
+    if (!('causeAny' in r)) { console.error('mech: classify 输出里没有 causeAny 字段（版本不匹配），拒绝出读数'); process.exit(2); }
+    // 不再只收 real 桶：降桶是分类器的判断，被审对象不该继承它的错误（匹配见第 3 步的 causeAny）
+    if (r.at >= Date.parse(since)) rows.push(r);
   }
 }
 if (!rows.length) { console.error('mech: 窗口内没有读到任何真失败行——这不代表「都压住了」，先查分类器能不能读到事件'); process.exit(2); }
@@ -168,13 +174,18 @@ for (const e of entries) {
       }
     }
   }
-  const mine = e.causes.length ? rows.filter((r) => e.causes.includes(r.cause || 'unclassified')) : [];
+  // 匹配用 causeAny：分类器给每一行都算的原始证据。只用 real 桶的 cause 时，
+  // 一类失败被宽规则误降桶后，机制会凭空「压住了」——分类器的错不该记在被审对象头上
+  const mine = e.causes.length ? rows.filter((r) => e.causes.includes(r.causeAny || 'unclassified')) : [];
+  const suspect = mine.filter((r) => r.bucket !== 'real').length;
   const before = mine.filter((r) => r.at >= e.t - WIN_MS && r.at < e.t);
   const after = mine.filter((r) => r.at >= e.t && r.at < e.t + WIN_MS);
   const j = judge(e, before, after, now >= e.t + WIN_MS, artifactExists, proofOk, proofMsg);
   results.push({
     id: e.id, family: e.family, kind: e.kind, artifact: e.artifact, causes: e.causes,
-    verdict: j.verdict, why: j.why, beforeN: before.length, afterN: after.length,
+    verdict: j.verdict,
+    why: j.why + (suspect ? `（另有 ${suspect} 条被降桶但证据吻合，已计入）` : ''),
+    beforeN: before.length, afterN: after.length, suspectN: suspect,
   });
 }
 

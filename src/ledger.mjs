@@ -33,6 +33,12 @@ if (!inPath || inPath === true) {
 const win = opt('window');
 const calls = Number(opt('calls') || 0);
 const top = Number(opt('top') || 8);
+// 分母非法时不许出「每千次」口径：0 会被当成没给，负数会算出负的错误率。
+// 读数错在分母上比错在分子上更难发现——它看起来总是很合理
+if (opt('calls') !== null && !(Number.isFinite(calls) && calls > 0)) {
+  console.error(`ledger: --calls 必须是正数（收到 ${JSON.stringify(opt('calls'))}）`);
+  process.exit(2);
+}
 
 // 分类与统计不复制实现：直接调 classify --dump，保证两边永远同一份规则表
 let rows = [];
