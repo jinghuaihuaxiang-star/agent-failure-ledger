@@ -1,0 +1,20 @@
+{
+  "name": "agent-failure-ledger",
+  "version": "0.1.0",
+  "description": "把 agent 的失败日志变成两个可核的数：真失败率，和有证据压住的失败类数",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "bin": {
+    "afl-classify": "src/classify.mjs",
+    "afl-ledger": "src/ledger.mjs",
+    "afl-mech": "src/mech.mjs",
+    "afl-edit": "src/edit-safe.mjs"
+  },
+  "files": ["src", "docs", "samples", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node test/run.mjs",
+    "demo": "node src/classify.mjs --in samples/events.sample.jsonl && node src/mech.mjs --events samples/events.sample.jsonl --registry samples/mechanisms.sample.jsonl"
+  },
+  "keywords": ["agent", "observability", "failure-analysis", "self-audit", "llm-agent", "evaluation"]
+}

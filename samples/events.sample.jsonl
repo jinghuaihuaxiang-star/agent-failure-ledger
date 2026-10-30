@@ -1,0 +1,20 @@
+{"at":"2026-08-03T09:12:00Z","tool":"pwsh","cmd":"pwsh -File build.ps1","exit":1,"out":"","err":"错误 \uFFFD\uFFFD\uFFFD\uFFFD PowerShell 版本 5.1 \uFFFD\uFFFD"}
+{"at":"2026-08-04T10:02:00Z","tool":"pwsh","cmd":"pwsh -File build.ps1","exit":1,"out":"","err":"\uFFFD\uFFFD\uFFFD\uFFFD \uFFFD\uFFFDParameterBindingException"}
+{"at":"2026-08-06T14:30:00Z","tool":"pwsh","cmd":"powershell -File deploy.ps1","exit":1,"out":"","err":"\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD"}
+{"at":"2026-08-07T08:44:00Z","tool":"edit","cmd":"edit file.txt","exit":1,"out":"","err":"file changed since it was read"}
+{"at":"2026-08-08T11:20:00Z","tool":"pwsh","cmd":"Get-ChildItem C:\\logs | Select-Object -First 3","exit":1,"out":"a.log\nb.log\nc.log","err":""}
+{"at":"2026-08-08T16:05:00Z","tool":"pwsh","cmd":"rg TODO src","exit":1,"out":"","err":""}
+{"at":"2026-08-09T09:00:00Z","tool":"pwsh","cmd":"node tools/q.mjs --selftest","exit":1,"out":"FAIL regex metachar","err":"FAIL 1 case"}
+{"at":"2026-08-09T13:15:00Z","tool":"pwsh","cmd":"node check.mjs","exit":1,"out":"","err":"invalid arguments: missing required property \"description\""}
+{"at":"2026-08-10T02:00:00Z","tool":"pwsh","cmd":"pwsh -File build.ps1","exit":1,"out":"","err":"Cannot find path 'C:\\out' because it does not exist."}
+{"at":"2026-08-11T10:30:00Z","tool":"pwsh","cmd":"node run.mjs --dry-run","exit":1,"out":"","err":"refused: dry run"}
+{"at":"2026-08-11T15:45:00Z","tool":"curl","cmd":"curl https://example.com","exit":28,"out":"","err":"TRANSPORT: Connection timed out"}
+{"at":"2026-08-12T09:10:00Z","tool":"pwsh","cmd":"node lint.mjs","exit":1,"out":"RESULT: FAIL 2 issues","err":""}
+{"at":"2026-08-13T11:00:00Z","tool":"pwsh","cmd":"node src/edit-safe.mjs --file a.txt --old x --new y","exit":1,"out":"","err":"{\"ok\":false,\"msg\":\"锚点出现 2 次，不唯一\"}"}
+{"at":"2026-08-14T08:20:00Z","tool":"pwsh","cmd":"node -e \"console.log(1)\"","exit":1,"out":"","err":"[eval]:1\nSyntaxError: Unexpected end of input"}
+{"at":"2026-08-14T17:40:00Z","tool":"pwsh","cmd":"pwsh -File build.ps1","exit":4294967295,"out":"","err":""}
+{"at":"2026-08-15T10:00:00Z","tool":"pwsh","cmd":"rg --files","exit":2,"out":"","err":"rg: C:\\virt: IO error for operation"}
+{"at":"2026-08-17T09:30:00Z","tool":"python","cmd":"py -3.13 probe.py","exit":1,"out":"","err":"Traceback (most recent call last):\n  File \"probe.py\", line 12, in <module>\n    x = 1/0\nZeroDivisionError"}
+{"at":"2026-08-18T13:00:00Z","tool":"pwsh","cmd":"Get-Process foo","exit":1,"out":"","err":""}
+{"at":"2026-08-19T16:10:00Z","tool":"edit","cmd":"edit config.yml","exit":1,"out":"","err":"has not been read"}
+{"at":"2026-08-20T09:05:00Z","tool":"bash","cmd":"git status","exit":1,"out":"","err":"TypeError: fetch failed"}

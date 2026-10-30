@@ -1,0 +1,3 @@
+{"id":"M01","ts":"2026-08-10T00:00:00Z","family":"PowerShell 5.1 报错文本乱码（GBK 被按 UTF-8 解码）","kind":"tool","artifact":"src/edit-safe.mjs","causes":["ps-gbk-garble"],"proof":[{"cmd":"node","args":["-e","0"]}],"note":"示例行：迁移到新环境时换成你自己的机制与探针。"}
+{"id":"M02","ts":"2026-08-12T00:00:00Z","family":"改文件没先读 / 版本失配 / 锚点不唯一","kind":"tool","artifact":"src/edit-safe.mjs","causes":["fs-not-read","fs-stale","fs-anchor"],"proof":[{"cmd":"node","args":["src/edit-safe.mjs","--file","samples/events.sample.jsonl","--peek"]}],"note":"把三条写路径收成一个入口。"}
+{"id":"M03","ts":"2026-08-14T00:00:00Z","family":"一批靠纪律压不下来的失败","kind":"rule","artifact":"README.md","causes":[],"proof":[],"note":"只有规则条文、没有可测根因也没有探针——这类永远是 declared，不进主指标。"}
