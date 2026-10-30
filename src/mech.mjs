@@ -29,6 +29,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { REAL_CAUSES } from './classify.mjs';
+
+// 账本里的 cause 必须是分类器认得的根因：拼错一个字母，机制会永远匹配不到、被判成 unproven，
+// 而 unproven 看起来跟「确实没有复发」一样安静
+const KNOWN_CAUSES = new Set(REAL_CAUSES.map((c) => c.id));
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLASSIFY = path.join(HERE, 'classify.mjs');
@@ -109,6 +114,8 @@ fs.readFileSync(REG, 'utf8').split('\n').forEach((line, i) => {
   if (!KINDS.includes(e.kind)) bad.push(`${at}（${e.id}）kind 只能是 ${KINDS.join('/')}`);
   if (typeof e.artifact !== 'string' || !e.artifact.trim()) bad.push(`${at}（${e.id}）缺 artifact`);
   if (!Array.isArray(e.causes)) bad.push(`${at}（${e.id}）causes 必须是数组（无可测前科写 []）`);
+  else if (e.causes.some((c) => typeof c !== 'string' || !c.trim())) bad.push(`${at}（${e.id}）causes 里只能是根因字符串（写成单个字符串会被逐字符拆开，匹配就废了）`);
+  else for (const c of e.causes) if (!KNOWN_CAUSES.has(c)) bad.push(`${at}（${e.id}）根因「${c}」不在 classify 已知列表里（拼错会让机制永远匹配不到）`);
   if (!Array.isArray(e.proof)) bad.push(`${at}（${e.id}）proof 必须是数组（没有探针也写 []，但那就只会是 declared）`);
   else e.proof.forEach((p, pi) => {
     if (!p || typeof p !== 'object') { bad.push(`${at}（${e.id}）proof[${pi}] 不是对象`); return; }
@@ -169,8 +176,13 @@ for (const e of entries) {
         execFileSync(p.cmd, p.args || [], { cwd: ROOT, encoding: 'utf8', timeout: 120000, maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
         if (want !== 0) { proofOk = false; proofMsg = `探针 ${p.cmd} 应回 ${want} 实际 0`; break; }
       } catch (err) {
-        const got = Number.isInteger(err.status) ? err.status : -1;
-        if (got !== want) { proofOk = false; proofMsg = `探针 ${p.cmd} exit ${got}（期望 ${want}）`; break; }
+        // 信号 / 超时 / 拿不到整数退出码 = 探针没真正跑完：这时不论账本里写的是什么期望值都不算通过
+        if (err.signal || err.killed || !Number.isInteger(err.status)) {
+          proofOk = false;
+          proofMsg = `探针 ${p.cmd} 没跑完（${err.signal ? 'signal ' + err.signal : err.killed ? '被终止' : '无退出码'}）`;
+          break;
+        }
+        if (err.status !== want) { proofOk = false; proofMsg = `探针 ${p.cmd} exit ${err.status}（期望 ${want}）`; break; }
       }
     }
   }
